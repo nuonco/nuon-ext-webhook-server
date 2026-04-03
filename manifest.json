@@ -1,0 +1,16 @@
+{
+  "name": "webhook-server",
+  "description": "Simple webhook receiver for Nuon flow step lifecycle events",
+  "repo": "nuonco/nuon-ext-webhook-server",
+  "version": "0.0.1",
+  "tag": "0.0.1",
+  "installed_at": "2026-03-17T00:00:00Z",
+  "updated_at": "2026-03-17T00:00:00Z",
+  "binary": "",
+  "type": "script",
+  "entrypoint": "nuon-ext-webhook-server",
+  "platform": "darwin/arm64",
+  "min_cli_version": "",
+  "requires_token": false,
+  "requires_org": false
+}

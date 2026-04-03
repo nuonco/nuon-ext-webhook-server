@@ -1,0 +1,7 @@
+[extension]
+name = "webhook-server"
+description = "Simple webhook receiver for Nuon flow step lifecycle events"
+
+[extension.auth]
+requires_token = false
+requires_org = false
