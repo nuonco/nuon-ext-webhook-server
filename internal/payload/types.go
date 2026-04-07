@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
 
 const (
@@ -12,80 +11,89 @@ const (
 	TransitionAfter  = "after"
 )
 
-type StepLifecycleWebhookPayload struct {
-	Version    string               `json:"version"`
-	Transition string               `json:"transition"`
-	SentAt     time.Time            `json:"sent_at"`
-	Event      StepPhaseEvent       `json:"event"`
-	Outcome    *StepPhaseOutcome    `json:"outcome,omitempty"`
-	Source     WebhookPayloadSource `json:"source"`
+// CloudEvent represents a CloudEvents v1.0 envelope for Nuon webhook deliveries.
+type CloudEvent struct {
+	SpecVersion     string                    `json:"specversion"`
+	ID              string                    `json:"id"`
+	Type            string                    `json:"type"`
+	Source          string                    `json:"source"`
+	Time            string                    `json:"time,omitempty"`
+	Subject         string                    `json:"subject,omitempty"`
+	DataContentType string                    `json:"datacontenttype,omitempty"`
+	NuonOrgID       string                    `json:"nuonorgid,omitempty"`
+	NuonOperation   string                    `json:"nuonoperation,omitempty"`
+	NuonTransition  string                    `json:"nuontransition"`
+	Data            *SignalLifecycleEventData `json:"data"`
 }
 
-type WebhookPayloadSource struct {
-	Service string `json:"service"`
-	Kind    string `json:"kind"`
+type SignalLifecycleEventData struct {
+	Signal    SignalIdentity `json:"signal"`
+	Phase     string         `json:"phase"`
+	Operation string         `json:"operation"`
+	Context   SignalContext  `json:"context"`
+	Outcome   *SignalOutcome `json:"outcome"`
 }
 
-type StepPhaseEvent struct {
-	WorkflowID   string `json:"workflow_id"`
-	WorkflowType string `json:"workflow_type"`
-	OrgID        string `json:"org_id"`
-	InstallID    string `json:"install_id"`
-	PlanOnly     bool   `json:"plan_only"`
-
-	StepID   string `json:"step_id"`
-	StepName string `json:"step_name"`
-	Phase    string `json:"phase"`
-
-	Descriptor StepDescriptor `json:"descriptor"`
+type SignalIdentity struct {
+	ID       string  `json:"id"`
+	QueueID  string  `json:"queue_id"`
+	Type     string  `json:"type"`
+	ParentID *string `json:"parent_id"`
 }
 
-type StepDescriptor struct {
-	StepIdx        int    `json:"step_idx"`
-	GroupIdx       int    `json:"group_idx"`
-	GroupRetryIdx  int    `json:"group_retry_idx"`
-	ExecutionType  string `json:"execution_type"`
-	SignalType     string `json:"signal_type"`
-	StepTargetType string `json:"step_target_type"`
-	StepTargetID   string `json:"step_target_id"`
-	Kind           string `json:"kind"`
-
-	ComponentID       *string `json:"component_id,omitempty"`
-	ActionTriggerType *string `json:"action_trigger_type,omitempty"`
+type SignalContext struct {
+	OrgID       string  `json:"org_id"`
+	AppID       *string `json:"app_id"`
+	InstallID   *string `json:"install_id"`
+	ComponentID *string `json:"component_id"`
+	SandboxID   *string `json:"sandbox_id"`
+	RunnerID    *string `json:"runner_id"`
 }
 
-type StepPhaseOutcome struct {
+type SignalOutcome struct {
 	Status     string         `json:"status"`
-	ErrMessage string         `json:"err_message,omitempty"`
-	Duration   time.Duration  `json:"duration,omitempty"`
+	Error      string         `json:"error,omitempty"`
+	DurationMs int64          `json:"duration_ms"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
-func (p *StepLifecycleWebhookPayload) Validate() error {
-	if p == nil {
+func (ce *CloudEvent) Validate() error {
+	if ce == nil {
 		return errors.New("payload is nil")
 	}
 
-	if strings.TrimSpace(p.Version) == "" {
-		return errors.New("version is required")
+	if ce.SpecVersion != "1.0" {
+		return fmt.Errorf("unsupported specversion %q", ce.SpecVersion)
 	}
 
-	switch p.Transition {
+	if strings.TrimSpace(ce.ID) == "" {
+		return errors.New("id is required")
+	}
+
+	if strings.TrimSpace(ce.Type) == "" {
+		return errors.New("type is required")
+	}
+
+	if strings.TrimSpace(ce.Source) == "" {
+		return errors.New("source is required")
+	}
+
+	switch ce.NuonTransition {
 	case TransitionBefore, TransitionAfter:
 	default:
-		return fmt.Errorf("invalid transition %q", p.Transition)
+		return fmt.Errorf("invalid nuontransition %q", ce.NuonTransition)
 	}
 
-	if strings.TrimSpace(p.Event.WorkflowID) == "" {
-		return errors.New("event.workflow_id is required")
+	if ce.Data == nil {
+		return errors.New("data is required")
 	}
 
-	if strings.TrimSpace(p.Event.StepID) == "" {
-		return errors.New("event.step_id is required")
+	if strings.TrimSpace(ce.Data.Signal.ID) == "" {
+		return errors.New("data.signal.id is required")
 	}
 
-	if strings.TrimSpace(p.Event.Phase) == "" {
-		return errors.New("event.phase is required")
+	if strings.TrimSpace(ce.Data.Phase) == "" {
+		return errors.New("data.phase is required")
 	}
 
 	return nil

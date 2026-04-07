@@ -1,9 +1,15 @@
 package server
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -32,12 +38,13 @@ type Server struct {
 }
 
 type ackResponse struct {
-	OK         bool      `json:"ok"`
-	ReceivedAt time.Time `json:"received_at"`
-	Transition string    `json:"transition,omitempty"`
-	WorkflowID string    `json:"workflow_id,omitempty"`
-	StepID     string    `json:"step_id,omitempty"`
-	Phase      string    `json:"phase,omitempty"`
+	OK             bool   `json:"ok"`
+	ReceivedAt     string `json:"received_at"`
+	Transition     string `json:"transition,omitempty"`
+	EventID        string `json:"event_id,omitempty"`
+	Operation      string `json:"operation,omitempty"`
+	Phase          string `json:"phase,omitempty"`
+	QueueSignalID  string `json:"queue_signal_id,omitempty"`
 }
 
 type errorResponse struct {
@@ -53,7 +60,7 @@ func New(cfg Config) *Server {
 	webhookPath := normalizePath(cfg.WebhookPath)
 	healthPath := normalizePath(cfg.HealthPath)
 	if webhookPath == "/" {
-		webhookPath = "/webhooks/flow/step-lifecycle"
+		webhookPath = "/webhooks/signal/lifecycle"
 	}
 	if healthPath == "/" {
 		healthPath = "/healthz"
@@ -90,7 +97,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ackResponse{OK: true, ReceivedAt: time.Now().UTC()})
+	writeJSON(w, http.StatusOK, ackResponse{OK: true, ReceivedAt: time.Now().UTC().Format(time.RFC3339)})
 }
 
 func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
@@ -99,23 +106,42 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxBodyBytes)
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.logger.Warn("unable to read webhook body",
+			zap.String("remote_addr", requestIP(r)),
+			zap.Error(err))
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "unable to read request body"})
+		return
+	}
+
 	if s.expectedSecret != "" {
-		providedSecret := strings.TrimSpace(r.Header.Get("X-Nuon-Webhook-Secret"))
-		if providedSecret != s.expectedSecret {
-			s.logger.Warn("rejecting webhook due to secret mismatch",
+		providedSig := strings.TrimSpace(r.Header.Get("X-Nuon-Signature"))
+		if providedSig == "" {
+			s.logger.Warn("rejecting webhook: missing X-Nuon-Signature",
+				zap.String("remote_addr", requestIP(r)))
+			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "missing signature"})
+			return
+		}
+
+		mac := hmac.New(sha256.New, []byte(s.expectedSecret))
+		mac.Write(body)
+		expectedSig := hex.EncodeToString(mac.Sum(nil))
+
+		if !hmac.Equal([]byte(providedSig), []byte(expectedSig)) {
+			s.logger.Warn("rejecting webhook: signature mismatch",
 				zap.String("remote_addr", requestIP(r)),
 				zap.String("webhook_path", s.webhookPath))
-			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "invalid webhook secret"})
+			writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "invalid signature"})
 			return
 		}
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, s.maxBodyBytes)
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(r.Body)
-	var event payload.StepLifecycleWebhookPayload
-	if err := decoder.Decode(&event); err != nil {
+	var event payload.CloudEvent
+	if err := json.Unmarshal(body, &event); err != nil {
 		s.logger.Warn("unable to decode webhook payload",
 			zap.String("remote_addr", requestIP(r)),
 			zap.Error(err))
@@ -131,55 +157,21 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logFields := []zap.Field{
-		zap.String("transition", event.Transition),
-		zap.String("workflow_id", event.Event.WorkflowID),
-		zap.String("workflow_type", event.Event.WorkflowType),
-		zap.String("org_id", event.Event.OrgID),
-		zap.String("install_id", event.Event.InstallID),
-		zap.Bool("plan_only", event.Event.PlanOnly),
-		zap.String("step_id", event.Event.StepID),
-		zap.String("step_name", event.Event.StepName),
-		zap.String("phase", event.Event.Phase),
-		zap.Int("step_idx", event.Event.Descriptor.StepIdx),
-		zap.Int("group_idx", event.Event.Descriptor.GroupIdx),
-		zap.Int("group_retry_idx", event.Event.Descriptor.GroupRetryIdx),
-		zap.String("execution_type", event.Event.Descriptor.ExecutionType),
-		zap.String("signal_type", event.Event.Descriptor.SignalType),
-		zap.String("step_target_type", event.Event.Descriptor.StepTargetType),
-		zap.String("step_target_id", event.Event.Descriptor.StepTargetID),
-		zap.String("step_kind", event.Event.Descriptor.Kind),
-		zap.String("source_service", event.Source.Service),
-		zap.String("source_kind", event.Source.Kind),
+	prettyJSON, _ := json.MarshalIndent(event, "", "  ")
+	s.logger.Info("received signal lifecycle webhook",
 		zap.String("remote_addr", requestIP(r)),
 		zap.String("user_agent", r.UserAgent()),
-	}
-
-	if event.Event.Descriptor.ComponentID != nil {
-		logFields = append(logFields, zap.String("component_id", *event.Event.Descriptor.ComponentID))
-	}
-	if event.Event.Descriptor.ActionTriggerType != nil {
-		logFields = append(logFields, zap.String("action_trigger_type", *event.Event.Descriptor.ActionTriggerType))
-	}
-
-	if event.Outcome != nil {
-		logFields = append(logFields,
-			zap.String("status", event.Outcome.Status),
-			zap.String("err_message", event.Outcome.ErrMessage),
-			zap.Duration("duration", event.Outcome.Duration),
-			zap.Int("outcome_metadata_keys", len(event.Outcome.Metadata)),
-		)
-	}
-
-	s.logger.Info("received step lifecycle webhook", logFields...)
+	)
+	fmt.Fprintf(os.Stdout, "\n%s\n\n", prettyJSON)
 
 	writeJSON(w, http.StatusOK, ackResponse{
-		OK:         true,
-		ReceivedAt: time.Now().UTC(),
-		Transition: event.Transition,
-		WorkflowID: event.Event.WorkflowID,
-		StepID:     event.Event.StepID,
-		Phase:      event.Event.Phase,
+		OK:            true,
+		ReceivedAt:    time.Now().UTC().Format(time.RFC3339),
+		Transition:    event.NuonTransition,
+		EventID:       event.ID,
+		Operation:     event.NuonOperation,
+		Phase:         event.Data.Phase,
+		QueueSignalID: event.Data.Signal.ID,
 	})
 }
 

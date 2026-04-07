@@ -32,7 +32,7 @@ type serveOptions struct {
 func newServeCommand() *cobra.Command {
 	opts := serveOptions{
 		addr:            ":8787",
-		webhookPath:     "/webhooks/flow/step-lifecycle",
+		webhookPath:     "/webhooks/signal/lifecycle",
 		healthPath:      "/healthz",
 		shutdownTimeout: 10 * time.Second,
 		readTimeout:     15 * time.Second,
@@ -42,7 +42,7 @@ func newServeCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run a webhook receiver that logs Nuon step lifecycle payloads",
+		Short: "Run a webhook receiver that logs Nuon signal lifecycle CloudEvents payloads",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runServe(cmd.Context(), opts)
 		},
@@ -51,7 +51,7 @@ func newServeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.addr, "addr", opts.addr, "Address to bind the HTTP server to")
 	cmd.Flags().StringVar(&opts.webhookPath, "path", opts.webhookPath, "Webhook endpoint path")
 	cmd.Flags().StringVar(&opts.healthPath, "health-path", opts.healthPath, "Health check endpoint path")
-	cmd.Flags().StringVar(&opts.expectedSecret, "secret", "", "Optional shared secret expected in X-Nuon-Webhook-Secret")
+	cmd.Flags().StringVar(&opts.expectedSecret, "secret", "", "Shared secret for HMAC-SHA256 signature validation (X-Nuon-Signature)")
 	cmd.Flags().DurationVar(&opts.shutdownTimeout, "shutdown-timeout", opts.shutdownTimeout, "Graceful shutdown timeout")
 	cmd.Flags().DurationVar(&opts.readTimeout, "read-timeout", opts.readTimeout, "HTTP read timeout")
 	cmd.Flags().DurationVar(&opts.writeTimeout, "write-timeout", opts.writeTimeout, "HTTP write timeout")
