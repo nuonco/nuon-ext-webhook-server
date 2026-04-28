@@ -38,13 +38,13 @@ type Server struct {
 }
 
 type ackResponse struct {
-	OK             bool   `json:"ok"`
-	ReceivedAt     string `json:"received_at"`
-	Transition     string `json:"transition,omitempty"`
-	EventID        string `json:"event_id,omitempty"`
-	Operation      string `json:"operation,omitempty"`
-	Phase          string `json:"phase,omitempty"`
-	QueueSignalID  string `json:"queue_signal_id,omitempty"`
+	OK         bool   `json:"ok"`
+	ReceivedAt string `json:"received_at"`
+	EventID    string `json:"event_id,omitempty"`
+	Event      string `json:"event,omitempty"`
+	Operation  string `json:"operation,omitempty"`
+	Stage      string `json:"stage,omitempty"`
+	Status     string `json:"status,omitempty"`
 }
 
 type errorResponse struct {
@@ -60,7 +60,7 @@ func New(cfg Config) *Server {
 	webhookPath := normalizePath(cfg.WebhookPath)
 	healthPath := normalizePath(cfg.HealthPath)
 	if webhookPath == "/" {
-		webhookPath = "/webhooks/signal/lifecycle"
+		webhookPath = "/webhooks/operation/lifecycle"
 	}
 	if healthPath == "/" {
 		healthPath = "/healthz"
@@ -158,20 +158,24 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	prettyJSON, _ := json.MarshalIndent(event, "", "  ")
-	s.logger.Info("received signal lifecycle webhook",
+	s.logger.Info("received operation lifecycle webhook",
 		zap.String("remote_addr", requestIP(r)),
 		zap.String("user_agent", r.UserAgent()),
+		zap.String("event", event.Data.Event),
+		zap.String("operation", event.Data.Operation),
+		zap.String("stage", event.Data.Stage),
+		zap.String("status", event.Data.Status),
 	)
 	fmt.Fprintf(os.Stdout, "\n%s\n\n", prettyJSON)
 
 	writeJSON(w, http.StatusOK, ackResponse{
-		OK:            true,
-		ReceivedAt:    time.Now().UTC().Format(time.RFC3339),
-		Transition:    event.NuonTransition,
-		EventID:       event.ID,
-		Operation:     event.NuonOperation,
-		Phase:         event.Data.Phase,
-		QueueSignalID: event.Data.Signal.ID,
+		OK:         true,
+		ReceivedAt: time.Now().UTC().Format(time.RFC3339),
+		EventID:    event.ID,
+		Event:      event.Data.Event,
+		Operation:  event.Data.Operation,
+		Stage:      event.Data.Stage,
+		Status:     event.Data.Status,
 	})
 }
 

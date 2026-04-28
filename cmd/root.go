@@ -9,7 +9,7 @@ func Execute() error {
 func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "nuon-ext-webhook-server",
-		Short:         "Webhook receiver for Nuon flow step lifecycle events",
+		Short:         "Webhook receiver for Nuon operation lifecycle events",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

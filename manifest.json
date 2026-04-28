@@ -1,6 +1,6 @@
 {
   "name": "webhook-server",
-  "description": "Simple webhook receiver for Nuon flow step lifecycle events",
+  "description": "Simple webhook receiver for Nuon operation lifecycle events",
   "repo": "nuonco/nuon-ext-webhook-server",
   "version": "0.0.1",
   "tag": "0.0.1",
