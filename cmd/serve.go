@@ -32,7 +32,7 @@ type serveOptions struct {
 func newServeCommand() *cobra.Command {
 	opts := serveOptions{
 		addr:            ":8787",
-		webhookPath:     "/webhooks/signal/lifecycle",
+		webhookPath:     "/webhooks/operation/lifecycle",
 		healthPath:      "/healthz",
 		shutdownTimeout: 10 * time.Second,
 		readTimeout:     15 * time.Second,
@@ -42,7 +42,7 @@ func newServeCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run a webhook receiver that logs Nuon signal lifecycle CloudEvents payloads",
+		Short: "Run a webhook receiver that logs Nuon operation lifecycle CloudEvents payloads",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runServe(cmd.Context(), opts)
 		},

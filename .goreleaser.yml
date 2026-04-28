@@ -1,0 +1,29 @@
+version: 2
+
+builds:
+  - id: nuon-ext-webhook-server
+    main: .
+    binary: nuon-ext-webhook-server
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: nuon-ext-webhook-server
+    builds:
+      - nuon-ext-webhook-server
+    format: tar.gz
+    name_template: "nuon-ext-webhook-server-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
